@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  core-database:
+    image: mestrikle/openmrsmysql:latest
+    container_name: kenyaemr_db
+    command: 
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb_buffer_pool_size=2G
+      - --innodb_log_file_size=512M
+      - --max_connections=1000
+    env_file:
+      - ./secrets/mysql.env
+    environment:
+      TZ: Africa/Nairobi
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "3336:3306"
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '5'
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "10"
+
+  kenyaemr-core:
+    image: chomsky9/openmrs3.x-java11:latest
+    container_name: kenyaemr_emr
+    depends_on:
+      core-database:
+        condition: service_healthy
+    ports:
+      - "8445:8443"
+      # - "8204:8080"
+    env_file:
+      - ./secrets/openmrs.env
+    environment:
+      JAVA_OPTS: "-Xms4G -Xmx4G -XX:+UseG1GC -XX:+UseContainerSupport"
+      TZ: Africa/Nairobi
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '4'
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "10"
+
+  kenyaemr-frontend:
+    image: nginx:latest
+    container_name: kenyaemr_nginx
+    depends_on:
+      - kenyaemr-core
+    ports:
+      - "8204:8204"
+    volumes:
+      - ./secrets/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./frontend:/var/lib/OpenMRS/frontend:ro
+    restart: unless-stopped
